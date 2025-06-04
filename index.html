@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>生物学単語神経衰弱ゲーム２</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Interフォントのインポート */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* 明るいグレーの背景 */
+        }
+        .card-inner {
+            width: 100%;
+            height: 100%;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+            position: relative;
+        }
+        .card.flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* shadow-md */
+        }
+        .card-front {
+            background-color: #6366f1; /* indigo-500 */
+            color: #ffffff; /* white */
+            font-size: 1.5rem; /* text-2xl */
+            font-weight: 700; /* font-bold */
+            overflow: hidden; /* 画像がはみ出さないように */
+        }
+        .card-front img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* 画像をカードに合わせて表示 */
+            border-radius: 0.75rem; /* rounded-xl */
+        }
+        .card-back {
+            background-color: #ffffff; /* white */
+            color: #374151; /* gray-700 */
+            transform: rotateY(180deg);
+            font-size: 1.25rem; /* text-xl */
+            font-weight: 600; /* font-semibold */
+            padding: 0.5rem; /* p-2 */
+            text-align: center;
+            word-break: break-word; /* 長い単語の折り返し */
+        }
+        .card.matched .card-back {
+            background-color: #a7f3d0; /* emerald-200 */
+            color: #065f46; /* emerald-800 */
+        }
+        .message-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px 40px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 1.5rem;
+            z-index: 1000;
+            display: none; /* 初期状態では非表示 */
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4 bg-gray-100">
+    <div class="message-box" id="messageBox"></div>
+
+    <div class="bg-white p-6 rounded-xl shadow-lg w-full max-w-4xl">
+        <h1 class="text-4xl font-extrabold text-center text-indigo-700 mb-6">生物学単語神経衰弱</h1>
+
+        <div class="flex justify-between items-center mb-6">
+            <div class="text-xl font-semibold text-gray-700">
+                試行回数: <span id="attempts" class="text-indigo-600">0</span>
+            </div>
+            <button id="resetButton" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                リセット
+            </button>
+        </div>
+
+        <div id="gameBoard" class="grid grid-cols-4 gap-4 w-full">
+            <!-- カードはJavaScriptによってここに挿入されます -->
+        </div>
+    </div>
+
+    <script type="module">
+        // 生物学関連の単語リスト (8個)
+        const words = [
+            "生殖細胞", "卵", "精子", "卵細胞",
+            "精細胞", "受精", "受精卵", "花粉管"
+        ];
+
+        // 各単語の定義
+        const definitions = {
+            "生殖細胞": "生殖に関わる細胞で、卵や精子など。",
+            "卵": "メスの生殖細胞。",
+            "精子": "オスの生殖細胞。",
+            "卵細胞": "動物のメスの生殖細胞。",
+            "精細胞": "植物のオスの生殖細胞。",
+            "受精": "卵と精子（または卵細胞と精細胞）が合体すること。",
+            "受精卵": "受精によってできた最初の細胞。",
+            "花粉管": "花粉から伸びて精細胞を胚珠に運ぶ管。"
+        };
+
+        let cards = [];
+        let flippedCards = [];
+        let matchedPairs = 0;
+        let attempts = 0;
+        let lockBoard = false; // カードクリックをロックするためのフラグ
+
+        const gameBoard = document.getElementById('gameBoard');
+        const attemptsDisplay = document.getElementById('attempts');
+        const resetButton = document.getElementById('resetButton');
+        const messageBox = document.getElementById('messageBox');
+
+        // メッセージボックスを表示する関数
+        // duration: 表示時間（ミリ秒）
+        function showMessageBox(message, definition = '', duration = 3000) {
+            messageBox.innerHTML = `<div class="text-2xl font-bold">${message}</div>`;
+            if (definition) {
+                messageBox.innerHTML += `<div class="text-base mt-2">${definition}</div>`; // 小さめのフォントで定義を表示
+            }
+            messageBox.style.display = 'block';
+            setTimeout(() => {
+                messageBox.style.display = 'none';
+            }, duration); // 指定された時間後に非表示
+        }
+
+        // カードをシャッフルする関数
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // ゲームボードを初期化する関数
+        function initializeGame() {
+            // カードのペアを作成
+            cards = [...words, ...words]; // 8単語 * 2 = 16枚のカード
+            shuffle(cards);
+
+            gameBoard.innerHTML = ''; // 既存のカードをクリア
+            flippedCards = [];
+            matchedPairs = 0;
+            attempts = 0;
+            lockBoard = false;
+            attemptsDisplay.textContent = attempts;
+
+            // カードをボードに作成
+            cards.forEach((word, index) => {
+                const cardElement = document.createElement('div');
+                cardElement.classList.add('card', 'w-full', 'aspect-square', 'cursor-pointer', 'rounded-xl', 'perspective');
+                cardElement.dataset.word = word;
+                cardElement.dataset.index = index; // カードのインデックスを保存
+
+                cardElement.innerHTML = `
+                    <div class="card-inner">
+                        <div class="card-face card-front">
+                            <!--
+                                ここにカードの表面の画像URLを挿入してください。
+                                現在はプレースホルダー画像を使用しています。
+                                例: <img src="https://example.com/your-uploaded-image.jpg" alt="カードの表面">
+                            -->
+                            <img src="https://placehold.co/100x100/6366f1/ffffff?text=?" alt="カードの表面の画像">
+                        </div>
+                        <div class="card-face card-back">${word}</div>
+                    </div>
+                `;
+                cardElement.addEventListener('click', handleCardClick);
+                gameBoard.appendChild(cardElement);
+            });
+
+            // カードが16枚なので、常に4x4のグリッドにする
+            gameBoard.style.gridTemplateColumns = `repeat(4, minmax(0, 1fr))`;
+        }
+
+        // カードクリックハンドラー
+        function handleCardClick(event) {
+            if (lockBoard) return; // ボードがロックされている場合は何もしない
+            const clickedCard = event.currentTarget;
+
+            // すでにマッチしたカードや、すでに表になっているカードはクリックできない
+            if (clickedCard.classList.contains('flipped') || clickedCard.classList.contains('matched')) {
+                return;
+            }
+
+            clickedCard.classList.add('flipped');
+            flippedCards.push(clickedCard);
+
+            if (flippedCards.length === 2) {
+                attempts++;
+                attemptsDisplay.textContent = attempts;
+                lockBoard = true; // 2枚目のカードがめくられたらボードをロック
+                checkForMatch();
+            }
+        }
+
+        // マッチしているかチェックする関数
+        function checkForMatch() {
+            const [card1, card2] = flippedCards;
+            const isMatch = card1.dataset.word === card2.dataset.word;
+
+            if (isMatch) {
+                disableCards();
+            } else {
+                unflipCards();
+            }
+        }
+
+        // マッチした場合の処理
+        function disableCards() {
+            flippedCards[0].classList.add('matched');
+            flippedCards[1].classList.add('matched');
+            flippedCards[0].removeEventListener('click', handleCardClick);
+            flippedCards[1].removeEventListener('click', handleCardClick);
+
+            matchedPairs++;
+            const matchedWord = flippedCards[0].dataset.word;
+            const definition = definitions[matchedWord];
+
+            resetBoard();
+
+            if (matchedPairs === words.length) {
+                // ゲームクリア時の処理
+                const rank = calculateRank(attempts);
+                showMessageBox(`おめでとうございます！${attempts}回で全てのペアを見つけました！`, `あなたのランクは ${rank} です！`, 10000); // ランク表示のため10秒表示
+            } else {
+                showMessageBox(`マッチしました！`, `${matchedWord}: ${definition}`);
+            }
+        }
+
+        // マッチしなかった場合の処理
+        function unflipCards() {
+            setTimeout(() => {
+                flippedCards[0].classList.remove('flipped');
+                flippedCards[1].classList.remove('flipped');
+                resetBoard();
+            }, 1000); // 1秒後に裏返す
+        }
+
+        // ボードの状態をリセットする関数
+        function resetBoard() {
+            [flippedCards, lockBoard] = [[], false];
+        }
+
+        // ランクを計算する関数
+        function calculateRank(attempts) {
+            if (attempts <= 10) {
+                return "S";
+            } else if (attempts <= 16) {
+                return "A";
+            } else if (attempts <= 30) {
+                return "B";
+            } else {
+                return "C";
+            }
+        }
+
+        // リセットボタンのイベントリスナー
+        resetButton.addEventListener('click', () => {
+            showMessageBox('ゲームをリセットしました！');
+            initializeGame();
+        });
+
+        // ウィンドウの読み込みが完了したらゲームを初期化
+        window.onload = function() {
+            initializeGame();
+        };
+    </script>
+</body>
+</html>
